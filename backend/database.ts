@@ -48,5 +48,5 @@ export const testDB = new Database([{
   event: "put",
   date: DateTime.now(),
   size: 0,
-  data: ["dummy-token","bar","biz","baz"],
+  data: [["dummy-token","bar","biz","baz"]],
 }]);

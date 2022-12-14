@@ -1,8 +1,11 @@
-import { Handlers, PageProps } from "$fresh/server.ts";
+import { HandlerContext, Handlers, PageProps } from "$fresh/server.ts";
 import DateTime from "https://raw.githubusercontent.com/moment/luxon/master/src/datetime.js";
-import { Record, testDB } from "../../backend/database.ts";
+import { Record, testDB } from "../../../backend/database.ts";
 import * as csv from "https://deno.land/x/csv@v0.8.0/mod.ts";
 import { readerFromStreamReader } from "https://deno.land/std/streams/reader_from_stream_reader.ts";
+import { CSVWriter } from "https://deno.land/x/csv@v0.8.0/mod.ts";
+import { Buffer } from "https://deno.land/std@0.167.0/io/buffer.ts";
+import { readableStreamFromIterable, readableStreamFromReader, readerFromIterable, writerFromStreamWriter } from "https://deno.land/std@0.164.0/streams/conversion.ts";
 
 export const handler: Handlers = {
   async POST(req, ctx) {
@@ -27,7 +30,7 @@ export const handler: Handlers = {
 
     return new Response("Done");
   },
-  async GET(req, ctx) {
+  GET(req, ctx) {
     const tokens = testDB.get({ event: "token", data: ctx.params.token });
 
     if (tokens.length == 0) return ctx.renderNotFound();
@@ -35,7 +38,16 @@ export const handler: Handlers = {
     const { bucket } = tokens[tokens.length - 1];
 
     const data = testDB.get({ bucket, event: "put" });
-    return await ctx.render(data);
+
+    const url = new URL(req.url);
+    const query = url.searchParams.get("download") ||
+      (url.searchParams.has("json") && "json") ||
+      (url.searchParams.has("csv") && "csv") ||
+      (url.searchParams.has("download") && "csv")
+      ;
+    const contentType = req.headers.get("Accept");
+
+    return formatData(req, ctx, data, query || contentType || "text/html");
   },
 };
 
@@ -54,10 +66,13 @@ async function parseData(req: Request, mimeType = "csv") {
       if (parameters && parameters.includes("header=present")) {
         const result = [];
         for await (
-          const row of csv.readCSVObjects(readerFromStreamReader(req.body.getReader()), {
-            // TODO: encoding from mime type
-            encoding: "utf-8",
-          })
+          const row of csv.readCSVObjects(
+            readerFromStreamReader(req.body.getReader()),
+            {
+              // TODO: encoding from mime type
+              encoding: "utf-8",
+            },
+          )
         ) {
           result.push(row);
         }
@@ -66,10 +81,13 @@ async function parseData(req: Request, mimeType = "csv") {
       } else {
         const result = [];
         for await (
-          const row of csv.readCSVRows(readerFromStreamReader(req.body.getReader()), {
-            // TODO: encoding from mime type
-            encoding: "utf-8",
-          })
+          const row of csv.readCSVRows(
+            readerFromStreamReader(req.body.getReader()),
+            {
+              // TODO: encoding from mime type
+              encoding: "utf-8",
+            },
+          )
         ) {
           result.push(row);
         }
@@ -77,6 +95,34 @@ async function parseData(req: Request, mimeType = "csv") {
         return result;
       }
   }
+}
+
+async function toCSV(data: Record[]) {
+  const buffer = new Buffer();
+
+  await csv.writeCSV(buffer, data.map(data => (data.data as string[][])).flat());
+
+  return buffer.bytes();
+}
+
+async function formatData(
+  req: Request,
+  ctx: HandlerContext,
+  data: Record[],
+  mimeType: string,
+  forceDownload = false,
+) {
+  if (mimeType.includes("json")) {
+    return Response.json(data);
+  }
+
+  if (mimeType.includes("csv") || forceDownload) {
+    return new Response(await toCSV(data), {
+      headers: { "Content-Type": "text/csv" },
+    });
+  }
+
+  return ctx.render(data);
 }
 
 export default function DataList(props: PageProps<Record[]>) {

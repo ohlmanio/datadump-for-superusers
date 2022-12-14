@@ -3,9 +3,7 @@ import DateTime from "https://raw.githubusercontent.com/moment/luxon/master/src/
 import { Record, testDB } from "../../../backend/database.ts";
 import * as csv from "https://deno.land/x/csv@v0.8.0/mod.ts";
 import { readerFromStreamReader } from "https://deno.land/std/streams/reader_from_stream_reader.ts";
-import { CSVWriter } from "https://deno.land/x/csv@v0.8.0/mod.ts";
 import { Buffer } from "https://deno.land/std@0.167.0/io/buffer.ts";
-import { readableStreamFromIterable, readableStreamFromReader, readerFromIterable, writerFromStreamWriter } from "https://deno.land/std@0.164.0/streams/conversion.ts";
 
 export const handler: Handlers = {
   async POST(req, ctx) {
@@ -113,7 +111,9 @@ async function formatData(
   forceDownload = false,
 ) {
   if (mimeType.includes("json")) {
-    return Response.json(data);
+    return Response.json(data, {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   if (mimeType.includes("csv") || forceDownload) {
